@@ -1,0 +1,30 @@
+{
+  "synced_at": "2026-08-23 07:56:00",
+  "note": "实盘基金持仓。净值由 scripts/sync_funds.py 从天天基金自动同步（QDII 基金 T+1/T+2 更新，无盘中估值）。",
+  "funds": [
+    {
+      "code": "019670",
+      "name": "广发港股创新药ETF联接(QDII)A",
+      "short_name": "广发港股创新药(QDII)A",
+      "type": "指数型-海外股票",
+      "company": "广发基金",
+      "manager": "刘杰",
+      "shares": 1717.17,
+      "cost": 1.164,
+      "nav": 1.4094,
+      "nav_date": "2026-08-21"
+    },
+    {
+      "code": "022184",
+      "name": "富国全球科技互联网股票(QDII)C",
+      "short_name": "富国全球科技互联网(QDII)C",
+      "type": "QDII-普通股票",
+      "company": "富国基金",
+      "manager": "赵年珅",
+      "shares": 356.45,
+      "cost": 5.6109,
+      "nav": 5.284,
+      "nav_date": "2026-08-20"
+    }
+  ]
+}

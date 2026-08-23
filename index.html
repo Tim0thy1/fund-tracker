@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>实盘基金跟踪 · Fund Tracker</title>
+<link rel="stylesheet" href="https://tim0thy1.github.io/design-system/design-system.css">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:var(--font-sans);
+    font-size:15px;line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+    transition:background .3s ease,color .3s ease;
+  }
+  .wrap{max-width:960px;margin:0 auto;padding:32px 20px 60px}
+
+  /* 头部 */
+  .head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:26px}
+  .head-left .kicker{font-size:11px;letter-spacing:.16em;color:var(--accent);text-transform:uppercase;font-weight:800;margin-bottom:6px}
+  .head-left h1{font-size:26px;font-weight:800;line-height:1.2}
+  .head-left .sub{font-size:13px;color:var(--muted);margin-top:6px}
+  .head-right{text-align:right;font-size:12px;color:var(--muted)}
+  .head-right .sync-time{font-family:var(--font-mono);font-size:11px}
+
+  /* 汇总卡 */
+  .summary{
+    display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px;
+  }
+  .sum-card{
+    background:var(--bg2);border:1px solid var(--rule);border-radius:var(--radius);
+    padding:16px 18px;box-shadow:var(--shadow);transition:background .3s,border-color .3s;
+  }
+  .sum-card .l{font-size:11px;color:var(--muted);font-weight:700;margin-bottom:4px}
+  .sum-card .v{font-family:var(--font-mono);font-weight:800;font-size:22px;line-height:1.2}
+  .sum-card .s{font-size:11px;color:var(--muted);margin-top:3px}
+  .sum-card .v.up{color:var(--red)}
+  .sum-card .v.down{color:var(--green)}
+
+  /* 基金卡片 */
+  .fund-card{
+    background:var(--bg2);border:1px solid var(--rule);border-radius:var(--radius-lg);
+    padding:22px;margin-bottom:16px;box-shadow:var(--shadow);transition:background .3s,border-color .3s;
+  }
+  .fund-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+  .fund-name{font-size:17px;font-weight:800}
+  .fund-meta{font-size:12px;color:var(--muted);margin-top:4px;display:flex;gap:12px;flex-wrap:wrap}
+  .fund-meta .tag{display:inline-block;background:var(--accent-soft);color:var(--accent);padding:1px 10px;border-radius:20px;font-weight:700;font-size:11px}
+  .fund-nav{text-align:right}
+  .fund-nav .nav-val{font-family:var(--font-mono);font-weight:800;font-size:20px}
+  .fund-nav .nav-date{font-size:11px;color:var(--muted);margin-top:2px}
+  .fund-nav .nav-label{font-size:11px;color:var(--muted)}
+
+  .fund-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;border-top:1px solid var(--rule);padding-top:16px}
+  .f-cell .l{font-size:11px;color:var(--muted);font-weight:700;margin-bottom:3px}
+  .f-cell .v{font-family:var(--font-mono);font-weight:700;font-size:15px}
+  .f-cell .v.up{color:var(--red)}
+  .f-cell .v.down{color:var(--green)}
+
+  /* 净值走势 */
+  .chart-box{margin-top:20px;border-top:1px solid var(--rule);padding-top:16px}
+  .chart-box .chart-title{font-size:13px;font-weight:700;margin-bottom:10px}
+  .chart-box svg{width:100%;height:auto;display:block}
+
+  /* 说明 */
+  .note{
+    background:var(--bg3);border:1px solid var(--rule);border-radius:var(--radius);
+    padding:14px 16px;font-size:12px;color:var(--muted);line-height:1.7;margin-top:24px;
+  }
+  .note b{color:var(--ink)}
+
+  @media (max-width:768px){
+    .summary{grid-template-columns:repeat(2,1fr)}
+    .fund-grid{grid-template-columns:repeat(2,1fr)}
+    .head-right{text-align:left}
+    .wrap{padding:22px 14px 50px}
+  }
+</style>
+<script>
+/* 主题跟随：读取工作台 localStorage 的 wb_theme_v1，同 origin 共享 */
+(function(){
+  try{
+    var t = localStorage.getItem('wb_theme_v1') || 'light';
+    document.documentElement.setAttribute('data-theme', t);
+    window.addEventListener('storage', function(e){
+      if(e.key === 'wb_theme_v1') document.documentElement.setAttribute('data-theme', e.newValue || 'light');
+    });
+  }catch(e){}
+})();
+</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div class="head-left">
+      <div class="kicker">REAL MONEY · FUNDS</div>
+      <h1>实盘基金跟踪</h1>
+      <div class="sub">两只 QDII 基金 · 天天基金净值自动同步</div>
+    </div>
+    <div class="head-right">
+      <div>数据源：天天基金</div>
+      <div class="sync-time" id="sync-time">—</div>
+    </div>
+  </div>
+
+  <div class="summary" id="summary"></div>
+  <div id="fund-list"></div>
+
+  <div class="note">
+    <b>说明：</b>两只均为 QDII 基金（投资港股/海外），净值 T+1/T+2 更新，<b>无盘中实时估值</b>。数据由 GitHub Actions 每天自动从天天基金同步，最新净值日期见各卡片。收益按「当前净值 × 持仓份额 − 总成本」计算，不含申赎手续费。
+  </div>
+</div>
+
+<script>
+(function(){
+  var data = null;
+
+  function fmt(n, d){
+    return n.toLocaleString('zh-CN', {minimumFractionDigits:d||2, maximumFractionDigits:d||2});
+  }
+  function pct(n){
+    var s = n >= 0 ? '+' : '';
+    return s + n.toFixed(2) + '%';
+  }
+  function cls(n){ return n >= 0 ? 'up' : 'down'; }
+
+  function load(){
+    fetch('data/funds.json?t=' + Date.now())
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        data = d;
+        render();
+      })
+      .catch(function(e){
+        document.getElementById('fund-list').innerHTML =
+          '<div style="text-align:center;color:var(--muted);padding:40px 0">数据加载失败：' + e.message + '</div>';
+      });
+  }
+
+  function render(){
+    var funds = data.funds;
+    var totalCost = 0, totalMkt = 0;
+    funds.forEach(function(f){
+      totalCost += f.shares * f.cost;
+      totalMkt += f.shares * f.nav;
+    });
+    var totalPnl = totalMkt - totalCost;
+    var totalPct = totalCost > 0 ? totalPnl / totalCost * 100 : 0;
+
+    document.getElementById('sync-time').textContent = '同步时间：' + (data.synced_at || '—');
+
+    var sum = document.getElementById('summary');
+    sum.innerHTML =
+      '<div class="sum-card"><div class="l">总成本</div><div class="v">¥' + fmt(totalCost) + '</div><div class="s">两只合计</div></div>' +
+      '<div class="sum-card"><div class="l">当前市值</div><div class="v">¥' + fmt(totalMkt) + '</div><div class="s">按最新净值</div></div>' +
+      '<div class="sum-card"><div class="l">累计盈亏</div><div class="v ' + cls(totalPnl) + '">' + (totalPnl>=0?'+':'') + fmt(totalPnl) + '</div><div class="s">' + pct(totalPct) + '</div></div>' +
+      '<div class="sum-card"><div class="l">总收益率</div><div class="v ' + cls(totalPct) + '">' + pct(totalPct) + '</div><div class="s">' + funds.length + ' 只基金</div></div>';
+
+    var list = document.getElementById('fund-list');
+    list.innerHTML = '';
+    funds.forEach(function(f){
+      var cost = f.shares * f.cost;
+      var mkt = f.shares * f.nav;
+      var pnl = mkt - cost;
+      var p = cost > 0 ? pnl / cost * 100 : 0;
+      var card = document.createElement('div');
+      card.className = 'fund-card';
+      card.innerHTML =
+        '<div class="fund-head">' +
+          '<div>' +
+            '<div class="fund-name">' + f.short_name + '</div>' +
+            '<div class="fund-meta">' +
+              '<span class="tag">' + (f.type||'基金') + '</span>' +
+              '<span>' + f.code + '</span>' +
+              '<span>' + (f.company||'') + '</span>' +
+              '<span>' + (f.manager||'') + '</span>' +
+            '</div>' +
+          '</div>' +
+          '<div class="fund-nav">' +
+            '<div class="nav-label">最新净值</div>' +
+            '<div class="nav-val">' + f.nav.toFixed(4) + '</div>' +
+            '<div class="nav-date">' + f.nav_date + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="fund-grid">' +
+          '<div class="f-cell"><div class="l">持仓份额</div><div class="v">' + fmt(f.shares, 2) + '</div></div>' +
+          '<div class="f-cell"><div class="l">成本价</div><div class="v">' + f.cost.toFixed(4) + '</div></div>' +
+          '<div class="f-cell"><div class="l">总成本</div><div class="v">¥' + fmt(cost) + '</div></div>' +
+          '<div class="f-cell"><div class="l">当前市值</div><div class="v">¥' + fmt(mkt) + '</div></div>' +
+          '<div class="f-cell"><div class="l">累计盈亏</div><div class="v ' + cls(pnl) + '">' + (pnl>=0?'+':'') + fmt(pnl) + '</div></div>' +
+          '<div class="f-cell"><div class="l">收益率</div><div class="v ' + cls(p) + '">' + pct(p) + '</div></div>' +
+        '</div>';
+      list.appendChild(card);
+    });
+  }
+
+  load();
+})();
+</script>
+</body>
+</html>

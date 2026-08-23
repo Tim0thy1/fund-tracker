@@ -1,0 +1,37 @@
+name: 每日基金净值同步
+
+on:
+  schedule:
+    # 每天 18:30（北京时间）跑一次，QDII 净值 T+1/T+2 更新
+    - cron: "30 10 * * *"
+  workflow_dispatch:  # 支持手动触发
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 同步基金净值
+        run: python3 scripts/sync_funds.py
+
+      - name: 提交变更
+        run: |
+          git config user.name "fund-tracker-bot"
+          git config user.email "fund-tracker-bot@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "无变更，跳过提交"
+          else
+            git commit -m "chore: 每日基金净值同步 $(date +%Y-%m-%d)"
+            git push
+          fi
