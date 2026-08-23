@@ -57,6 +57,10 @@ def main():
                 continue
             old_nav = fund.get("nav")
             if old_nav != nav or fund.get("nav_date") != nav_date:
+                # 保存上一期净值，用于计算当日盈亏
+                if old_nav is not None and old_nav != nav:
+                    fund["prev_nav"] = old_nav
+                    fund["prev_nav_date"] = fund.get("nav_date")
                 fund["nav"] = nav
                 fund["nav_date"] = nav_date
                 fund["name"] = info["name"]
