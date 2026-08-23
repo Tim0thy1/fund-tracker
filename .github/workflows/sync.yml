@@ -2,8 +2,8 @@ name: 每日基金净值同步
 
 on:
   schedule:
-    # 每天 21:00（北京时间 = 13:00 UTC）跑一次，QDII 净值 T+1/T+2 更新
-    - cron: "0 13 * * *"
+    # 工作日 21:00（北京时间 = 13:00 UTC）跑一次，周末不开盘不推送
+    - cron: "0 13 * * 1-5"
   workflow_dispatch:  # 支持手动触发
 
 permissions:
@@ -26,7 +26,7 @@ jobs:
 
       - name: 微信通知盈亏
         env:
-          SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
+          SCKEY: ${{ secrets.SCKEY }}
         run: python3 scripts/notify_wechat.py
 
       - name: 提交变更

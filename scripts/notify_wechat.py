@@ -4,9 +4,9 @@
 通过 Server酱(ServerChan) 推送基金盈亏到微信
 ============================================
 读取 data/funds.json，计算每只基金当日盈亏与累计盈亏，推送到微信。
-需要 GitHub Secret: SERVERCHAN_KEY（Server酱 SendKey）
+需要 GitHub Secret: SCKEY（Server酱 SendKey，与 signal 仓库一致）
 
-用法：SERVERCHAN_KEY=xxx python3 scripts/notify_wechat.py
+用法：SCKEY=xxx python3 scripts/notify_wechat.py
 """
 import json, os, datetime, urllib.request, urllib.parse
 
@@ -15,9 +15,9 @@ DATA_FILE = os.path.join(BASE_DIR, "data", "funds.json")
 
 
 def main():
-    sendkey = os.environ.get("SERVERCHAN_KEY", "").strip()
-    if not sendkey:
-        print("[跳过] 未配置 SERVERCHAN_KEY，跳过微信通知")
+    sckey = os.environ.get("SCKEY", "").strip()
+    if not sckey or sckey == "YOUR_SENDKEY":
+        print("[跳过] 未配置 SCKEY，跳过微信通知")
         return
 
     with open(DATA_FILE, "r", encoding="utf-8") as f:
@@ -63,7 +63,7 @@ def main():
     desp = "\n".join(lines)
     desp += f"---\n**当日合计：{total_day_pnl:+.2f} 元**\n**累计合计：{total_pnl:+.2f} 元（{total_pnl_pct:+.2f}%）**"
 
-    url = f"https://sctapi.ftqq.com/{sendkey}.send"
+    url = f"https://sctapi.ftqq.com/{sckey}.send"
     payload = urllib.parse.urlencode({"title": title, "desp": desp}).encode("utf-8")
     req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/x-www-form-urlencoded"})
     with urllib.request.urlopen(req, timeout=20) as r:
