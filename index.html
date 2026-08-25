@@ -65,6 +65,20 @@
   .chart-box .chart-title{font-size:13px;font-weight:700;margin-bottom:10px}
   .chart-box svg{width:100%;height:auto;display:block}
 
+  /* 加密货币区块 */
+  .crypto-block{margin-top:30px;padding-top:26px;border-top:1px solid var(--rule)}
+  .crypto-title{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:800;margin-bottom:4px}
+  .crypto-title .live-dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 0 rgba(0,200,120,.5);animation:pulse 1.8s infinite}
+  .crypto-title .live-dot.err{background:var(--red);animation:none}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(0,200,120,.5)}70%{box-shadow:0 0 0 7px rgba(0,200,120,0)}100%{box-shadow:0 0 0 0 rgba(0,200,120,0)}}
+  .crypto-sub{font-size:12px;color:var(--muted);margin-bottom:14px}
+  .tag.short{background:var(--red-dim);color:var(--red)}
+  .tag.long{background:var(--green-dim);color:var(--green)}
+  .price-status{font-size:11px;color:var(--muted);margin-top:2px}
+  .price-status.err{color:var(--red)}
+  .liq{font-size:11px;color:var(--muted);margin-top:2px}
+  .liq b{font-family:var(--font-mono);font-weight:700}
+
   /* 说明 */
   .note{
     background:var(--bg3);border:1px solid var(--rule);border-radius:var(--radius);
@@ -109,8 +123,14 @@
   <div class="summary" id="summary"></div>
   <div id="fund-list"></div>
 
+  <div class="crypto-block" id="crypto-block" style="display:none">
+    <div class="crypto-title"><span class="live-dot" id="btc-dot"></span>加密货币实盘 <span style="font-size:12px;color:var(--muted);font-weight:600">· 24/7 实时</span></div>
+    <div class="crypto-sub">比特币 2x 做空合约 · 价格实时获取，盈亏随行情即时变动</div>
+    <div id="crypto-list"></div>
+  </div>
+
   <div class="note">
-    <b>说明：</b>两只均为 QDII 基金（投资港股/海外），净值 T+1/T+2 更新，<b>无盘中实时估值</b>。数据由 GitHub Actions 每天自动从天天基金同步，最新净值日期见各卡片。收益按「当前净值 × 持仓份额 − 总成本」计算，不含申赎手续费。
+    <b>说明：</b>两只均为 QDII 基金（投资港股/海外），净值 T+1/T+2 更新，<b>无盘中实时估值</b>。数据由 GitHub Actions 每天自动从天天基金同步，最新净值日期见各卡片。收益按「当前净值 × 持仓份额 − 总成本」计算，不含申赎手续费。比特币为杠杆合约，保证金约 ¥/USD 78.63，盈亏与强平价随实时价格变动，仅供个人跟踪参考。
   </div>
 </div>
 
@@ -133,11 +153,93 @@
       .then(function(d){
         data = d;
         render();
+        renderCrypto();
       })
       .catch(function(e){
         document.getElementById('fund-list').innerHTML =
           '<div style="text-align:center;color:var(--muted);padding:40px 0">数据加载失败：' + e.message + '</div>';
       });
+  }
+
+  /* BTC 实时价格：多源 fallback */
+  function fetchBtcPrice(){
+    var sources = [
+      { url: 'https://api.gateio.ws/api/v4/spot/tickers?currency_pair=BTC_USDT', parse: function(d){ return d && d[0] ? parseFloat(d[0].last) : null; } },
+      { url: 'https://blockchain.info/ticker', parse: function(d){ return d && d.USD ? d.USD.last : null; } },
+      { url: 'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd', parse: function(d){ return d && d.bitcoin ? d.bitcoin.usd : null; } }
+    ];
+    var i = 0;
+    function next(){
+      if(i >= sources.length) return Promise.reject(new Error('所有价格源均不可用'));
+      var s = sources[i++];
+      return fetch(s.url + (s.url.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now())
+        .then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(function(d){
+          var p = s.parse(d);
+          if(!p || isNaN(p)) throw new Error('解析失败');
+          return p;
+        })
+        .catch(function(){ return next(); });
+    }
+    return next();
+  }
+
+  /* 比特币做空合约卡片 */
+  function renderCrypto(){
+    var c = data.crypto;
+    if(!c) return;
+    var block = document.getElementById('crypto-block');
+    var list = document.getElementById('crypto-list');
+    var dot = document.getElementById('btc-dot');
+    block.style.display = 'block';
+    list.innerHTML = '<div style="text-align:center;color:var(--muted);padding:30px 0">正在获取 BTC 实时价格…</div>';
+
+    fetchBtcPrice().then(function(price){
+      dot.classList.remove('err');
+      var qty = c.qty, entry = c.entry_price, lev = c.leverage;
+      var notional = entry * qty;                 // 名义价值
+      var margin = notional / lev;                // 保证金
+      var pnl = (entry - price) * qty;            // 做空盈亏
+      var pctVal = 2 * (entry - price) / entry * 100; // 2x 做空收益率
+      var liq = entry * (1 + 1 / lev);            // 强平价
+      var dir = c.direction === 'short' ? '做空' : '做多';
+      var now = new Date();
+      var ts = now.getHours() + ':' + String(now.getMinutes()).padStart(2, '0') + ':' + String(now.getSeconds()).padStart(2, '0');
+
+      var card = document.createElement('div');
+      card.className = 'fund-card';
+      card.innerHTML =
+        '<div class="fund-head">' +
+          '<div>' +
+            '<div class="fund-name">' + c.short_name + '</div>' +
+            '<div class="fund-meta">' +
+              '<span class="tag ' + (c.direction === 'short' ? 'short' : 'long') + '">' + dir + ' · ' + lev + 'x</span>' +
+              '<span>' + c.symbol + '</span>' +
+              '<span>' + (c.exchange || '') + '</span>' +
+              '<span>开仓 ' + (c.entry_time || '') + '</span>' +
+            '</div>' +
+          '</div>' +
+          '<div class="fund-nav">' +
+            '<div class="nav-label">当前价（实时）</div>' +
+            '<div class="nav-val">$' + fmt(price, 0) + '</div>' +
+            '<div class="nav-date">' + ts + ' 更新</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="fund-grid">' +
+          '<div class="f-cell"><div class="l">持仓量</div><div class="v">' + fmt(qty, 3) + ' BTC</div></div>' +
+          '<div class="f-cell"><div class="l">开仓均价</div><div class="v">$' + fmt(entry, 0) + '</div></div>' +
+          '<div class="f-cell"><div class="l">保证金</div><div class="v">$' + fmt(margin, 2) + '</div></div>' +
+          '<div class="f-cell"><div class="l">杠杆</div><div class="v">' + lev + 'x</div></div>' +
+          '<div class="f-cell"><div class="l">累计盈亏</div><div class="v ' + cls(pnl) + '">' + (pnl >= 0 ? '+' : '') + '$' + fmt(pnl, 2) + '</div></div>' +
+          '<div class="f-cell"><div class="l">收益率</div><div class="v ' + cls(pctVal) + '">' + pct(pctVal) + '</div></div>' +
+        '</div>' +
+        '<div class="liq">强平价 ≈ <b>$' + fmt(liq, 0) + '</b>（' + dir + '方向，价格触及即触发强平）</div>';
+      list.innerHTML = '';
+      list.appendChild(card);
+    }).catch(function(e){
+      dot.classList.add('err');
+      list.innerHTML = '<div style="text-align:center;color:var(--red);padding:30px 0">BTC 价格获取失败：' + e.message + '</div>';
+    });
   }
 
   function render(){
