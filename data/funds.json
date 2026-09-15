@@ -1,6 +1,6 @@
 {
-  "synced_at": "2026-09-14 18:29:59",
-  "note": "实盘基金持仓。净值由 scripts/sync_funds.py 从天天基金自动同步（QDII 基金 T+1/T+2 更新，无盘中估值）。比特币为 2x 做空合约，价格由前端实时获取。",
+  "synced_at": "2026-09-15 13:47:00",
+  "note": "实盘账户持仓。基金净值由 scripts/sync_funds.py 从天天基金自动同步（QDII 基金 T+1/T+2 更新，无盘中估值）。A股康龙化成为持仓股票，现价由前端实时获取。现金为账户现金余额，直接计入总资产。",
   "funds": [
     {
       "code": "019670",
@@ -23,25 +23,25 @@
       "type": "QDII-普通股票",
       "company": "富国基金",
       "manager": "赵年珅",
-      "shares": 356.45,
-      "cost": 5.6109,
+      "shares": 453.81,
+      "cost": 5.5089,
       "nav": 5.0706,
       "nav_date": "2026-09-11",
       "prev_nav": 5.1056,
       "prev_nav_date": "2026-09-10"
     }
   ],
-  "crypto": {
-    "symbol": "BTC",
-    "name": "比特币",
-    "short_name": "比特币 2x 做空",
-    "type": "合约 · 2x做空",
-    "exchange": "Gate.io",
-    "direction": "short",
-    "leverage": 2,
-    "qty": 0.002,
-    "entry_price": 78628,
-    "entry_time": "2026-08-25",
-    "margin": 78.63
-  }
+  "stocks": [
+    {
+      "code": "sz300759",
+      "symbol": "300759",
+      "name": "康龙化成",
+      "short_name": "康龙化成(A股)",
+      "type": "A股-医药",
+      "exchange": "深交所 创业板",
+      "shares": 100,
+      "cost": 42.57
+    }
+  ],
+  "cash": 5744.07
 }

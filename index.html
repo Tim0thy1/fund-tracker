@@ -111,8 +111,8 @@
   <div class="head">
     <div class="head-left">
       <div class="kicker">REAL MONEY · FUNDS</div>
-      <h1>实盘基金跟踪</h1>
-      <div class="sub">两只 QDII 基金 · 天天基金净值自动同步</div>
+      <h1>实盘账户跟踪</h1>
+      <div class="sub">QDII 基金 + A股 + 现金 · 账户总览</div>
     </div>
     <div class="head-right">
       <div>数据源：天天基金</div>
@@ -122,15 +122,10 @@
 
   <div class="summary" id="summary"></div>
   <div id="fund-list"></div>
-
-  <div class="crypto-block" id="crypto-block" style="display:none">
-    <div class="crypto-title"><span class="live-dot" id="btc-dot"></span>加密货币实盘 <span style="font-size:12px;color:var(--muted);font-weight:600">· 24/7 实时</span></div>
-    <div class="crypto-sub">比特币 2x 做空合约 · 价格实时获取，盈亏随行情即时变动</div>
-    <div id="crypto-list"></div>
-  </div>
+  <div id="cash-row" style="margin-bottom:16px"></div>
 
   <div class="note">
-    <b>说明：</b>两只均为 QDII 基金（投资港股/海外），净值 T+1/T+2 更新，<b>无盘中实时估值</b>。数据由 GitHub Actions 每天自动从天天基金同步，最新净值日期见各卡片。收益按「当前净值 × 持仓份额 − 总成本」计算，不含申赎手续费。比特币为杠杆合约，保证金约 ¥/USD 78.63，盈亏与强平价随实时价格变动，仅供个人跟踪参考。
+    <b>说明：</b>两只 QDII 基金（投资港股/海外）净值 T+1/T+2 更新，<b>无盘中实时估值</b>，由 GitHub Actions 每天自动从天天基金同步。A股康龙化成为持仓股票，现价实时获取。收益按「现价 × 数量 − 总成本」计算，不含手续费。现金直接计入总资产。总资产 = 基金市值 + 股票市值 + 现金。
   </div>
 </div>
 
@@ -152,8 +147,9 @@
       .then(function(r){ return r.json(); })
       .then(function(d){
         data = d;
-        render();
-        renderCrypto();
+        renderFunds();
+        renderCash();
+        renderStocks(data.stocks || []);
       })
       .catch(function(e){
         document.getElementById('fund-list').innerHTML =
@@ -161,108 +157,161 @@
       });
   }
 
-  /* BTC 实时价格：多源 fallback */
-  function fetchBtcPrice(){
+  /* A股实时价格：新浪 + 腾讯 fallback。st 支持 kv(now,prev_close,open,high,low,volume,amount) */
+  function fetchStockPrice(code, symbol){
     var sources = [
-      { url: 'https://api.gateio.ws/api/v4/spot/tickers?currency_pair=BTC_USDT', parse: function(d){ return d && d[0] ? parseFloat(d[0].last) : null; } },
-      { url: 'https://blockchain.info/ticker', parse: function(d){ return d && d.USD ? d.USD.last : null; } },
-      { url: 'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd', parse: function(d){ return d && d.bitcoin ? d.bitcoin.usd : null; } }
+      {
+        url: 'https://hq.sinajs.cn/list=' + code,
+        headers: { 'Referer': 'https://finance.sina.com.cn' },
+        parse: function(t){
+          var m = t.match(/="([^"]*)"/);
+          if(!m) return null;
+          var p = m[1].split(',');
+          // 康龙类 A股：字段[3]=当前价,[4]=昨收
+          var now = parseFloat(p[3]), prev = parseFloat(p[4]);
+          if(isNaN(now)||!now) return null;
+          return { now: now, prev: prev, name: p[0] };
+        }
+      },
+      {
+        url: 'https://qt.gtimg.cn/q=' + code,
+        parse: function(t){
+          var m = t.match(/="([^"]*)"/);
+          if(!m) return null;
+          var p = m[1].split('~');
+          var now = parseFloat(p[3]), prev = parseFloat(p[4]);
+          if(isNaN(now)||!now) return null;
+          return { now: now, prev: prev, name: p[1] };
+        }
+      }
     ];
     var i = 0;
     function next(){
       if(i >= sources.length) return Promise.reject(new Error('所有价格源均不可用'));
       var s = sources[i++];
-      return fetch(s.url + (s.url.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now())
-        .then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-        .then(function(d){
-          var p = s.parse(d);
-          if(!p || isNaN(p)) throw new Error('解析失败');
-          return p;
-        })
+      return fetch(s.url)
+        .then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+        .then(s.parse)
+        .then(function(v){ if(!v) throw new Error('解析失败'); return v; })
         .catch(function(){ return next(); });
     }
     return next();
   }
 
-  /* 比特币做空合约卡片 */
-  function renderCrypto(){
-    var c = data.crypto;
-    if(!c) return;
-    var block = document.getElementById('crypto-block');
-    var list = document.getElementById('crypto-list');
-    var dot = document.getElementById('btc-dot');
-    block.style.display = 'block';
-    list.innerHTML = '<div style="text-align:center;color:var(--muted);padding:30px 0">正在获取 BTC 实时价格…</div>';
-
-    fetchBtcPrice().then(function(price){
-      dot.classList.remove('err');
-      var qty = c.qty, entry = c.entry_price, lev = c.leverage;
-      var notional = entry * qty;                 // 名义价值
-      var margin = notional / lev;                // 保证金
-      var pnl = (entry - price) * qty;            // 做空盈亏
-      var pctVal = 2 * (entry - price) / entry * 100; // 2x 做空收益率
-      var liq = entry * (1 + 1 / lev);            // 强平价
-      var dir = c.direction === 'short' ? '做空' : '做多';
-      var now = new Date();
-      var ts = now.getHours() + ':' + String(now.getMinutes()).padStart(2, '0') + ':' + String(now.getSeconds()).padStart(2, '0');
-
+  /* 股票卡片 */
+  function renderStocks(stocks){
+    var host = document.getElementById('fund-list');
+    var done = 0, total = stocks.length;
+    function finish(){ if(++done >= total){ renderSummary(); } }
+    stocks.forEach(function(s){
       var card = document.createElement('div');
       card.className = 'fund-card';
       card.innerHTML =
         '<div class="fund-head">' +
           '<div>' +
-            '<div class="fund-name">' + c.short_name + '</div>' +
+            '<div class="fund-name">' + s.short_name + '</div>' +
             '<div class="fund-meta">' +
-              '<span class="tag ' + (c.direction === 'short' ? 'short' : 'long') + '">' + dir + ' · ' + lev + 'x</span>' +
-              '<span>' + c.symbol + '</span>' +
-              '<span>' + (c.exchange || '') + '</span>' +
-              '<span>开仓 ' + (c.entry_time || '') + '</span>' +
+              '<span class="tag">' + (s.type||'股票') + '</span>' +
+              '<span>' + s.symbol + '</span>' +
+              '<span>' + (s.exchange||'') + '</span>' +
             '</div>' +
           '</div>' +
-          '<div class="fund-nav">' +
-            '<div class="nav-label">当前价（实时）</div>' +
-            '<div class="nav-val">$' + fmt(price, 0) + '</div>' +
-            '<div class="nav-date">' + ts + ' 更新</div>' +
-          '</div>' +
+          '<div class="fund-nav"><div class="nav-label">现价（实时）</div><div class="nav-val" id="sv-' + s.symbol + '">…</div><div class="nav-date" id="svd-' + s.symbol + '">加载中</div></div>' +
         '</div>' +
         '<div class="fund-grid">' +
-          '<div class="f-cell"><div class="l">持仓量</div><div class="v">' + fmt(qty, 3) + ' BTC</div></div>' +
-          '<div class="f-cell"><div class="l">开仓均价</div><div class="v">$' + fmt(entry, 0) + '</div></div>' +
-          '<div class="f-cell"><div class="l">保证金</div><div class="v">$' + fmt(margin, 2) + '</div></div>' +
-          '<div class="f-cell"><div class="l">杠杆</div><div class="v">' + lev + 'x</div></div>' +
-          '<div class="f-cell"><div class="l">累计盈亏</div><div class="v ' + cls(pnl) + '">' + (pnl >= 0 ? '+' : '') + '$' + fmt(pnl, 2) + '</div></div>' +
-          '<div class="f-cell"><div class="l">收益率</div><div class="v ' + cls(pctVal) + '">' + pct(pctVal) + '</div></div>' +
-        '</div>' +
-        '<div class="liq">强平价 ≈ <b>$' + fmt(liq, 0) + '</b>（' + dir + '方向，价格触及即触发强平）</div>';
-      list.innerHTML = '';
-      list.appendChild(card);
-    }).catch(function(e){
-      dot.classList.add('err');
-      list.innerHTML = '<div style="text-align:center;color:var(--red);padding:30px 0">BTC 价格获取失败：' + e.message + '</div>';
+          '<div class="f-cell"><div class="l">持仓数量</div><div class="v">' + fmt(s.shares, 0) + ' 股</div></div>' +
+          '<div class="f-cell"><div class="l">成本价</div><div class="v">' + fmt(s.cost, 3) + '</div></div>' +
+          '<div class="f-cell"><div class="l">总成本</div><div class="v">¥' + fmt(s.shares * s.cost) + '</div></div>' +
+          '<div class="f-cell"><div class="l">当前市值</div><div class="v 2" data-stock-mkt="' + s.symbol + '">计算中</div></div>' +
+          '<div class="f-cell"><div class="l">累计盈亏</div><div class="v" data-stock-pnl="' + s.symbol + '">—</div></div>' +
+          '<div class="f-cell"><div class="l">收益率</div><div class="v" data-stock-pct="' + s.symbol + '">—</div></div>' +
+        '</div>';
+      host.appendChild(card);
+
+      fetchStockPrice(s.code, s.symbol).then(function(px){
+        var mkt = px.now * s.shares;
+        var cost = s.shares * s.cost;
+        var pnl = mkt - cost;
+        var p = cost > 0 ? pnl / cost * 100 : 0;
+        var pr = px.prev ? (px.now - px.prev) / px.prev * 100 : 0;
+        document.getElementById('sv-' + s.symbol).textContent = '¥' + fmt(px.now, 3);
+        document.getElementById('svd-' + s.symbol).textContent = (px.name || s.symbol) + ' · 实时';
+        var mktEl = document.querySelector('[data-stock-mkt="' + s.symbol + '"]');
+        var pnlEl = document.querySelector('[data-stock-pnl="' + s.symbol + '"]');
+        var pctEl = document.querySelector('[data-stock-pct="' + s.symbol + '"]');
+        mktEl.textContent = '¥' + fmt(mkt);
+        mktEl.className = 'v';
+        pnlEl.textContent = (pnl>=0?'+':'') + fmt(pnl);
+        pnlEl.className = 'v ' + cls(pnl);
+        pctEl.textContent = pct(p);
+        pctEl.className = 'v ' + cls(p);
+        var navVal = document.getElementById('sv-' + s.symbol);
+        navVal.classList.add(pr > 0 ? 'up' : (pr < 0 ? 'down' : ''));
+        s._mkt = mkt; s._cost = cost; s._pnl = pnl;
+        finish();
+      }).catch(function(e){
+        document.getElementById('sv-' + s.symbol).textContent = '—';
+        document.getElementById('svd-' + s.symbol).textContent = '获取失败';
+        var mktEl = document.querySelector('[data-stock-mkt="' + s.symbol + '"]');
+        mktEl.textContent = '—';
+        s._mkt = null; s._cost = s.shares * s.cost; s._pnl = null;
+        finish();
+      });
     });
   }
 
-  function render(){
-    var funds = data.funds;
-    var totalCost = 0, totalMkt = 0;
-    funds.forEach(function(f){
-      totalCost += f.shares * f.cost;
-      totalMkt += f.shares * f.nav;
+  /* 汇总卡：总资产 = 基金市值 + 股票市值 + 现金 */
+  var SUMMARY = { fundCost:0, fundMkt:0 };
+  function renderSummary(){
+    var cash = data.cash || 0;
+    var stockMkt = 0, stockCost = 0, stockOk = true;
+    (data.stocks || []).forEach(function(s){
+      stockCost += s.shares * s.cost;
+      if(s._mkt == null){ stockOk = false; } else { stockMkt += s._mkt; }
     });
-    var totalPnl = totalMkt - totalCost;
+    var totalAsset = SUMMARY.fundMkt + stockMkt + cash;
+    var totalCost = SUMMARY.fundCost + stockCost;
+    var totalPnl = totalAsset - totalCost;
     var totalPct = totalCost > 0 ? totalPnl / totalCost * 100 : 0;
+    var sum = document.getElementById('summary');
+    sum.innerHTML =
+      '<div class="sum-card"><div class="l">账户总资产</div><div class="v">¥' + fmt(totalAsset) + '</div><div class="s">基金 + 股票 + 现金</div></div>' +
+      '<div class="sum-card"><div class="l">持仓成本</div><div class="v">¥' + fmt(totalCost) + '</div><div class="s">基金 + 股票</div></div>' +
+      '<div class="sum-card"><div class="l">累计盈亏</div><div class="v ' + cls(totalPnl) + '">' + (totalPnl>=0?'+':'') + fmt(totalPnl) + '</div><div class="s">' + pct(totalPct) + '</div></div>' +
+      '<div class="sum-card"><div class="l">现金</div><div class="v">¥' + fmt(cash) + '</div><div class="s">账户余额</div></div>';
+  }
+
+  /* 现金行 */
+  function renderCash(){
+    var host = document.getElementById('cash-row');
+    var cash = data.cash || 0;
+    if(data.cash === undefined) return;
+    host.innerHTML =
+      '<div class="fund-card" style="margin-bottom:0">' +
+        '<div class="fund-head">' +
+          '<div><div class="fund-name">💰 现金</div><div class="fund-meta"><span class="tag">现金余额</span><span>账户可用</span></div></div>' +
+          '<div class="fund-nav"><div class="nav-label">现金</div><div class="nav-val">¥' + fmt(cash) + '</div></div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  /* 基金渲染（存基金汇总） */
+  function renderFunds(){
+    var funds = data.funds;
+    SUMMARY.fundCost = 0; SUMMARY.fundMkt = 0;
+    funds.forEach(function(f){
+      SUMMARY.fundCost += f.shares * f.cost;
+      SUMMARY.fundMkt += f.shares * f.nav;
+    });
 
     document.getElementById('sync-time').textContent = '同步时间：' + (data.synced_at || '—');
 
-    var sum = document.getElementById('summary');
-    sum.innerHTML =
-      '<div class="sum-card"><div class="l">总成本</div><div class="v">¥' + fmt(totalCost) + '</div><div class="s">两只合计</div></div>' +
-      '<div class="sum-card"><div class="l">当前市值</div><div class="v">¥' + fmt(totalMkt) + '</div><div class="s">按最新净值</div></div>' +
-      '<div class="sum-card"><div class="l">累计盈亏</div><div class="v ' + cls(totalPnl) + '">' + (totalPnl>=0?'+':'') + fmt(totalPnl) + '</div><div class="s">' + pct(totalPct) + '</div></div>' +
-      '<div class="sum-card"><div class="l">总收益率</div><div class="v ' + cls(totalPct) + '">' + pct(totalPct) + '</div><div class="s">' + funds.length + ' 只基金</div></div>';
-
     var list = document.getElementById('fund-list');
-    list.innerHTML = '';
+    var sectionTitle = document.createElement('div');
+    sectionTitle.style.cssText = 'font-size:14px;font-weight:800;color:var(--ink);margin:26px 0 12px';
+    sectionTitle.textContent = '📊 基金持仓';
+    list.appendChild(sectionTitle);
+
     funds.forEach(function(f){
       var cost = f.shares * f.cost;
       var mkt = f.shares * f.nav;
@@ -297,6 +346,8 @@
         '</div>';
       list.appendChild(card);
     });
+
+    renderSummary();
   }
 
   load();
