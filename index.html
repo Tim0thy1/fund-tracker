@@ -125,7 +125,7 @@
   <div id="cash-row" style="margin-bottom:16px"></div>
 
   <div class="note">
-    <b>说明：</b>两只 QDII 基金（投资港股/海外）净值 T+1/T+2 更新，<b>无盘中实时估值</b>，由 GitHub Actions 每天自动从天天基金同步。A股康龙化成为持仓股票，现价实时获取。收益按「现价 × 数量 − 总成本」计算，不含手续费。现金直接计入总资产。总资产 = 基金市值 + 股票市值 + 现金。
+    <b>说明：</b>两只 QDII 基金（投资港股/海外）净值 T+1/T+2 更新，<b>无盘中实时估值</b>，由 GitHub Actions 每天自动从天天基金同步。A股康龙化成为持仓股票，现价实时获取。账户总资产 = 基金市值 + 股票市值 + 现金。持仓浮动盈亏仅按基金和股票的「现价 × 数量 − 总成本」计算，不含手续费，<b>现金不参与盈亏计算</b>。
   </div>
 </div>
 
@@ -260,7 +260,7 @@
     });
   }
 
-  /* 汇总卡：总资产 = 基金市值 + 股票市值 + 现金 */
+  /* 汇总卡：总资产 = 基金市值 + 股票市值 + 现金；盈亏只算持仓本身，现金不参与盈亏 */
   var SUMMARY = { fundCost:0, fundMkt:0 };
   function renderSummary(){
     var cash = data.cash || 0;
@@ -270,14 +270,15 @@
       if(s._mkt == null){ stockOk = false; } else { stockMkt += s._mkt; }
     });
     var totalAsset = SUMMARY.fundMkt + stockMkt + cash;
-    var totalCost = SUMMARY.fundCost + stockCost;
-    var totalPnl = totalAsset - totalCost;
-    var totalPct = totalCost > 0 ? totalPnl / totalCost * 100 : 0;
+    var totalCost = SUMMARY.fundCost + stockCost;          // 成本=基金+股票（不含现金）
+    var holdPnl = (SUMMARY.fundMkt - SUMMARY.fundCost) + (stockMkt - stockCost); // 仅持仓浮盈
+    var holdCost = totalCost;                              // 收益率分母=持仓成本
+    var holdPct = holdCost > 0 ? holdPnl / holdCost * 100 : 0;
     var sum = document.getElementById('summary');
     sum.innerHTML =
       '<div class="sum-card"><div class="l">账户总资产</div><div class="v">¥' + fmt(totalAsset) + '</div><div class="s">基金 + 股票 + 现金</div></div>' +
       '<div class="sum-card"><div class="l">持仓成本</div><div class="v">¥' + fmt(totalCost) + '</div><div class="s">基金 + 股票</div></div>' +
-      '<div class="sum-card"><div class="l">累计盈亏</div><div class="v ' + cls(totalPnl) + '">' + (totalPnl>=0?'+':'') + fmt(totalPnl) + '</div><div class="s">' + pct(totalPct) + '</div></div>' +
+      '<div class="sum-card"><div class="l">持仓浮动盈亏</div><div class="v ' + cls(holdPnl) + '">' + (holdPnl>=0?'+':'') + fmt(holdPnl) + '</div><div class="s">仅基金+股票，现金不计</div></div>' +
       '<div class="sum-card"><div class="l">现金</div><div class="v">¥' + fmt(cash) + '</div><div class="s">账户余额</div></div>';
   }
 
